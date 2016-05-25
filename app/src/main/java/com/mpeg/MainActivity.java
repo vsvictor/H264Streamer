@@ -7,12 +7,24 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.widget.Button;
 
+import com.coremedia.iso.IsoFile;
+import com.coremedia.iso.boxes.Container;
+import com.googlecode.mp4parser.FileDataSourceImpl;
+import com.googlecode.mp4parser.authoring.Movie;
+import com.googlecode.mp4parser.authoring.builder.DefaultMp4Builder;
+import com.googlecode.mp4parser.authoring.tracks.H264TrackImpl;
+
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 
 public class MainActivity extends AppCompatActivity {
     private String TAG = "MainActivity";
@@ -23,8 +35,9 @@ public class MainActivity extends AppCompatActivity {
     private Camera camera;
     private SurfaceView surfaceView;
     private SurfaceHolder surfaceHolder;
+    private Button bStop;
     private AvcEncoder enc;
-    private File F;
+    private File h264File;
 
 
     @Override
@@ -35,15 +48,43 @@ public class MainActivity extends AppCompatActivity {
 //Encoding prepare...
 
         try {
-            F = new File(Environment.getExternalStorageDirectory(),"stream.mp4");
-            F.createNewFile();
-            out = new BufferedOutputStream(new FileOutputStream(F));
+            h264File = new File(Environment.getExternalStorageDirectory(),"stream.264");
+            h264File.createNewFile();
+            out = new BufferedOutputStream(new FileOutputStream(h264File));
         } catch (IOException e) {
             e.printStackTrace();
         }
         enc = new AvcEncoder(WIDTH, HEIGHT, out);
 
         initSurface();
+        bStop = (Button) findViewById(R.id.bStop);
+        bStop.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (camera != null) {
+                    camera.stopPreview();
+                    camera.release();
+                    camera = null;
+                }
+                enc.close();
+                try {
+                    out.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                try {
+                    H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(Environment.getExternalStorageDirectory()+"/stream.264"));
+                    Movie movie = new Movie();
+                    movie.addTrack(h264Track);
+                    Container mp4file = new DefaultMp4Builder().build(movie);
+                    FileChannel fc = new FileOutputStream(new File(Environment.getExternalStorageDirectory(),"stream.mp4")).getChannel();
+                    mp4file.writeContainer(fc);
+                    fc.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
     }
     @Override
     protected void onResume(){
@@ -72,6 +113,7 @@ public class MainActivity extends AppCompatActivity {
             camera.release();
             camera = null;
         }
+        enc.close();
     }
     private void initSurface() {
         surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
@@ -106,6 +148,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
             enc.offerEncoder(data);
+            camera.addCallbackBuffer(data);
             Log.i(TAG, "Frame saved");
         }
     };
